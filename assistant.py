@@ -1,7 +1,7 @@
 # assistant.py
 import os
 import streamlit as st
-import pinecone
+from pinecone import Pinecone
 from pinecone_plugins.assistant.models.chat import Message
 from database import save_conversation, get_conversation, get_all_conversations, create_new_conversation, rename_conversation, delete_conversation
 import time
@@ -14,57 +14,40 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @st.cache_resource
-def initialize_pinecone(max_retries=3, retry_delay=5):
+def initialize_pinecone():
     api_key = get_api_key()
     if not api_key:
         st.error("Pinecone API key not found. Please set it in your environment variables or Streamlit secrets.")
         return None
-
-    for attempt in range(max_retries):
-        try:
-            return pinecone.Pinecone(api_key=api_key)
-        except Exception as e:
-            if attempt < max_retries - 1:
-                st.warning(f"Error initializing Pinecone (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-            else:
-                st.error(f"Failed to initialize Pinecone after {max_retries} attempts: {e}")
-                return None
+    try:
+        return Pinecone(api_key=api_key)
+    except Exception as e:
+        logger.error(f"Failed to initialize Pinecone: {e}")
+        st.error(f"Failed to initialize Pinecone. Please check your API key and try again.")
+        return None
 
 def get_api_key():
     return os.environ.get("PINECONE_API_KEY") or st.secrets.get("PINECONE_API_KEY")
 
-def get_assistant(_pinecone_instance, config, username):
+def get_assistant(pinecone_instance, config, username):
     try:
         assistant_name = config['credentials']['usernames'][username]['assistant']
         logger.info(f"Connecting to assistant: {assistant_name}")
-        return _pinecone_instance.assistant.Assistant(assistant_name)
+        return pinecone_instance.assistant.describe_assistant(assistant_name)
     except Exception as e:
         logger.error(f"Error connecting to assistant: {e}")
-        st.error(f"Error connecting to assistant: {e}")
+        st.error(f"Error connecting to assistant. Please check your configuration and try again.")
         return None
 
-def query_assistant(assistant, query, chat_history, max_retries=3, retry_delay=5, timeout=90):
-    def execute_query():
-        chat_context = chat_history + [Message(content=query, role="user")]
+def query_assistant(assistant, query, chat_history, stream=True):
+    try:
+        chat_context = [Message(content=m["content"], role=m["role"]) for m in chat_history]
+        chat_context.append(Message(content=query, role="user"))
         logger.info(f"Sending query to assistant: {query}")
-        return assistant.chat_completions(messages=chat_context, stream=True)
-
-    for attempt in range(max_retries):
-        try:
-            with ThreadPoolExecutor() as executor:
-                future = executor.submit(execute_query)
-                try:
-                    return future.result(timeout=timeout)
-                except TimeoutError:
-                    raise Exception(f"Query timed out after {timeout} seconds")
-        except Exception as e:
-            logger.error(f"Error querying assistant (attempt {attempt + 1}/{max_retries}): {str(e)}")
-            if attempt < max_retries - 1:
-                st.warning(f"Error querying assistant (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-            else:
-                return f"Error querying assistant after {max_retries} attempts: {str(e)}"
+        return assistant.chat_completions(messages=chat_context, stream=stream)
+    except Exception as e:
+        logger.error(f"Error querying assistant: {str(e)}")
+        return f"Error querying assistant: {str(e)}"
 
 def get_or_create_initial_conversation(username):
     conversations = get_all_conversations(username)
@@ -74,21 +57,18 @@ def get_or_create_initial_conversation(username):
         return create_new_conversation(username)
 
 def cleanup_response(response):
-    # Remove empty numbered lines
     cleaned = re.sub(r'\n\d+\.\s*$', '', response, flags=re.MULTILINE)
-    
-    # Remove trailing empty lines
     cleaned = cleaned.rstrip()
-    
-    # If the last non-empty line is a question about what to do next, remove empty numbers after it
     last_line = cleaned.split('\n')[-1]
     if "what would you like to do" in last_line.lower() or "what do you want to do" in last_line.lower():
         cleaned = re.sub(r'\n\d+\.?\s*$', '', cleaned, flags=re.MULTILINE)
-    
     return cleaned
 
 def chat_interface(assistant, username):
-    # Initialize session state variables
+    if assistant is None:
+        st.error("Assistant not initialized. Please check your configuration and API key.")
+        return
+
     if "current_conversation_id" not in st.session_state:
         st.session_state.current_conversation_id = get_or_create_initial_conversation(username)
     if "renaming_conversation" not in st.session_state:
@@ -96,10 +76,8 @@ def chat_interface(assistant, username):
     if "deleting_conversation" not in st.session_state:
         st.session_state.deleting_conversation = None
 
-    # Get all conversations for the sidebar
     conversations = get_all_conversations(username)
 
-    # Sidebar for conversation management
     with st.sidebar:
         st.title("Conversations")
         if st.button("New Conversation"):
@@ -125,25 +103,17 @@ def chat_interface(assistant, username):
             if col3.button("Delete", key=f"delete_{conv_id}"):
                 st.session_state.deleting_conversation = conv_id
 
-        # Handle renaming
         if st.session_state.renaming_conversation:
             handle_rename(username, conversations)
 
-        # Handle deleting
         if st.session_state.deleting_conversation:
             handle_delete(username, conversations)
 
-    # Initialize chat history from database
     if "messages" not in st.session_state:
         st.session_state.messages = get_conversation(username, st.session_state.current_conversation_id)
 
-    # Display current conversation name
     display_current_conversation(conversations)
-
-    # Display chat messages
     display_chat_messages()
-
-    # Chat input
     handle_chat_input(assistant, username)
 
 def handle_rename(username, conversations):
@@ -193,54 +163,40 @@ def display_chat_messages():
 
 def handle_chat_input(assistant, username):
     if prompt := st.chat_input("What would you like to know about?"):
-        # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generate assistant response
         with st.chat_message("assistant"):
-            response_stream = query_assistant(assistant, prompt, [Message(content=m["content"], role=m["role"]) for m in st.session_state.messages])
+            response = query_assistant(assistant, prompt, st.session_state.messages)
             
-            if isinstance(response_stream, str):  # Error occurred
-                st.error(response_stream)
+            if isinstance(response, str):  # Error occurred
+                st.error(response)
                 return
 
             message_placeholder = st.empty()
             full_response = ""
             
             try:
-                for chunk in response_stream:
-                    if chunk.choices:
-                        content = chunk.choices[0].delta.content
-                        if content:
-                            full_response += content
-                            cleaned_response = cleanup_response(full_response)
-                            message_placeholder.markdown(cleaned_response + "▌")
+                if isinstance(response, dict):  # Non-streaming response
+                    full_response = response['choices'][0]['message']['content']
+                    message_placeholder.markdown(full_response)
+                else:  # Streaming response
+                    for chunk in response:
+                        if chunk.choices:
+                            content = chunk.choices[0].delta.content
+                            if content:
+                                full_response += content
+                                cleaned_response = cleanup_response(full_response)
+                                message_placeholder.markdown(cleaned_response + "▌")
             except Exception as e:
-                logger.error(f"Error while streaming response: {str(e)}")
-                st.error(f"Error while streaming response: {str(e)}")
+                logger.error(f"Error while processing response: {str(e)}")
+                st.error("An error occurred while processing the response. Please try again.")
                 return
             
             final_cleaned_response = cleanup_response(full_response)
             message_placeholder.markdown(final_cleaned_response)
         
-        # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": final_cleaned_response})
-
-        # Save the updated conversation
         save_conversation(username, st.session_state.current_conversation_id, st.session_state.messages)
-
-# Debug function to display assistant information
-def debug_assistant_info(assistant):
-    if assistant:
-        st.sidebar.write("Assistant Information:")
-        st.sidebar.write(f"Name: {assistant.name}")
-        st.sidebar.write(f"ID: {assistant.id}")
-    else:
-        st.sidebar.write("Assistant not initialized")
-
-# You can uncomment the following line in chat_interface to use the debug function
-# debug_assistant_info(assistant)

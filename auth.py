@@ -1,5 +1,16 @@
+# auth.py
 import streamlit as st
+import yaml
+from yaml.loader import SafeLoader
 import streamlit_authenticator as stauth
+
+def load_config():
+    with open('config.yaml', 'r', encoding='utf-8') as file:
+        return yaml.load(file, Loader=SafeLoader)
+
+def save_config(config):
+    with open('config.yaml', 'w', encoding='utf-8') as file:
+        yaml.dump(config, file, default_flow_style=False)
 
 def initialize_auth(config):
     return stauth.Authenticate(
@@ -7,25 +18,25 @@ def initialize_auth(config):
         config['cookie']['name'],
         config['cookie']['key'],
         config['cookie']['expiry_days'],
-        config.get('pre-authorized')
+        config['pre-authorized']
     )
 
 def handle_authentication(authenticator):
-    if not st.session_state.get("authentication_status"):
-        name, authentication_status, username = authenticator.login()
-        if authentication_status is False:
-            st.error('Username/password is incorrect')
-        elif authentication_status is None:
-            st.warning('Please enter your username and password')
-        else:
-            return username
-    else:
-        return st.session_state.get("username")
+    try:
+        authenticator.login()
+    except Exception as e:
+        st.error(e)
+
+    if st.session_state["authentication_status"]:
+        return st.session_state["username"]
+    elif st.session_state["authentication_status"] is False:
+        st.error('Username/password is incorrect')
+    elif st.session_state["authentication_status"] is None:
+        st.warning('Please enter your username and password')
+    
     return None
 
-def handle_account_settings(authenticator):
-    with st.sidebar:
-        st.title("⚙️ Account Settings")
-        st.write(f'Logged in as: *{st.session_state["name"]}*')
-        if authenticator.logout("Logout", "sidebar"):
+def handle_logout(authenticator):
+    if st.session_state["authentication_status"]:
+        if authenticator.logout('Logout', 'sidebar'):
             st.rerun()

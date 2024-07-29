@@ -11,7 +11,7 @@ def init_connection():
 
 def get_database():
     client = init_connection()
-    return client.get_database("ttrpg-buddy-db")
+    return client.get_database("regulations-buddy-db")
 
 def get_chat_history_collection():
     db = get_database()

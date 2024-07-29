@@ -1,30 +1,29 @@
 cookie:
   expiry_days: 30
-  key: 8f82jf92jf92jf92jf92jf92jf92jf92
-  name: ttrpg_buddy_auth
+  key: 12asd74fjxa231kdk234fsa
+  name: regulation_buddy_auth
 credentials:
   usernames:
-    cheubner:
-      assistant: ttrpg-buddy-cullen
-      email: cheubner@gmail.com
+    efraserhurley:
+      assistant: regulations-buddy
+      email: e.fraserhurley@yordasgroup.com
+      failed_login_attempts: 0
+      logged_in: true
+      name: Eloise Fraser-Hurley
+      password: $2b$12$Od9ZZ.Cs8KQxQOQQOMa.f./WXJ83nhADvIaQ/p1x9wG7YRdfa4.va
+    lgraham:
+      assistant: regulations-buddy
+      email: l.graham@yordasgroup.com
       failed_login_attempts: 0
       logged_in: false
-      name: Cullen Heubner
-      password: $2b$12$Gl3btbNT9UDOGb8LeTuVvORkGHrJa7gePQycgUxDz8cZX29BMizvK
-    kheubner:
-      assistant: ttrpg-buddy-keel
-      email: klhbnr@gmail.com
-      failed_login_attempts: 0
-      logged_in: false
-      name: Keel Heubner
-      password: $2b$12$9xyk1hU4qSrvURAb3VpAfep07GwJT70/MTJpKM6jurRBvEUy0awES
+      name: Lee Graham
+      password: $2b$12$1rlOZXNbhDZFk1ZLyyx5NOfE5EetVn9EAfZqsNg/H8B0Y6aXGH77S
     rheubner:
-      assistant: dnd5e-assistant
-      email: ross.heubner@gmail.com
+      assistant: regulations-buddy
+      email: r.heubner@yordasgroup.com
       failed_login_attempts: 0
       logged_in: true
       name: Ross Heubner
-      password: $2b$12$I2sycvc0T5sXZ6W/1c81l.BaeneYBRd9UsNGz2RSMc8ykWYNbdmEK
+      password: $2b$12$A2QJmJe7cfx/gop/Hc22q.wLOHI9.v./vso7/WBMzzNBuyvxBQoHG
 pre-authorized:
-  emails:
-  - melsby@gmail.com
+  emails: null
